@@ -15,17 +15,12 @@ var XKCDCollection = bookshelf.Collection.extend({
   model: XKCDPage
 });
 
-class WebsiteXkcdClass {
-  constructor(options) {
-    this.baseId     = "https://xkcd.com/";
-    this.urlPostfix = "/";
-    this.model      = XKCDPage;
+class Website {
+  constructor() {
   }
-
   getUrl(id) {
     return this.baseId + id + this.urlPostfix;
   }
-
   getLatestId() {
     var self = this;
     return requestPromise("https://xkcd.com/").then(function(html) {
@@ -51,7 +46,7 @@ class WebsiteXkcdClass {
     var self = this;
     return this.getAllIds().then((ids) => {
       return Promise.all(
-        ids.map((url) => self.isDownloaded(url))
+        ids.map((id) => self.isDownloaded(id))
       )
       .then(function(isDownloaded) {
         var urlHash          = _.zipObject(ids, isDownloaded);
@@ -65,20 +60,6 @@ class WebsiteXkcdClass {
     return this.model.where('id', id).count().then(function(count) {
       return count !== 0;
     });
-  }
-
-  parseId(id) {
-    var self = this;
-    return requestPromise(this.getUrl(id)).then(function(html) {
-      var $ = cheerio.load(html);
-      var data = {};
-      data.id      = id;
-      data.url     = self.getUrl(id);
-      data.title   = $("#ctitle").text();
-      data.alttext = $("#comic img").attr('title');
-      data.image   = $("#comic img").attr('src');
-      return data;
-    })
   }
 
   scrapeId(id) {
@@ -113,9 +94,31 @@ class WebsiteXkcdClass {
     })
   }
 }
+class WebsiteXkcd extends Website {
+  constructor() {
+    super();
+    this.baseId     = "https://xkcd.com/";
+    this.urlPostfix = "/";
+    this.model      = XKCDPage;
+  }
+
+  parseId(id) {
+    var self = this;
+    return requestPromise(this.getUrl(id)).then(function(html) {
+      var $ = cheerio.load(html);
+      var data = {};
+      data.id      = id;
+      data.url     = self.getUrl(id);
+      data.title   = $("#ctitle").text();
+      data.alttext = $("#comic img").attr('title');
+      data.image   = $("#comic img").attr('src');
+      return data;
+    })
+  }
+}
 
 module.exports = {
   XKCDPage:         XKCDPage,
   XKCDCollection:   XKCDCollection,
-  WebsiteXkcdClass: WebsiteXkcdClass
+  WebsiteXkcdClass: WebsiteXkcd
 };
