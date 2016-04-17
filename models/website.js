@@ -17,57 +17,63 @@ var XKCDCollection = bookshelf.Collection.extend({
 
 class WebsiteXkcdClass {
   constructor(options) {
+    this.baseId     = "https://xkcd.com/";
+    this.urlPostfix = "/";
+    this.model      = XKCDPage;
   }
 
-  getCurrentId() {
+  getUrl(id) {
+    return this.baseId + id + this.urlPostfix;
+  }
+
+  getLatestId() {
     var self = this;
     return requestPromise("https://xkcd.com/").then(function(html) {
       var $ = cheerio.load(html);
       var href = $(".comicNav li a[rel=prev]").attr('href');
-      self.currentId = Number(String(href).replace(/\D+/g, '')) + 1;
-      return self.currentId;
+      self.latestId = Number(String(href).replace(/\D+/g, '')) + 1;
+      return self.latestId;
     })
   }
 
-  getAllUrls() {
-    var self = this;
-    return this.getCurrentId().then((currentId) => {
-      self.urls = _(1).range(currentId + 1).without(404)
-      .map(function(id) {
-        return "https://xkcd.com/" + id + "/";
-      })
-      .value();
-      return self.urls;
+  getAllIds() {
+    return this.getLatestId().then((latestId) => {
+      return _(1).range(latestId + 1).without(404).value();
     });
   }
+  getAllUrls() {
+    return this.getAllIds().then((ids) => {
+      return _.map(ids, this.getUrl, this);
+    }, this);
+  }
 
-  getUndownloadedUrls() {
+  getUndownloadedIds() {
     var self = this;
-    return this.getAllUrls().then((urls) => {
+    return this.getAllIds().then((ids) => {
       return Promise.all(
-        urls.map((url) => self.isDownloaded(url))
+        ids.map((url) => self.isDownloaded(url))
       )
       .then(function(isDownloaded) {
-        var urlHash          = _.zipObject(urls, isDownloaded);
-        var undownloadedUrls = _(urlHash).omitBy().keys().value();
-        return undownloadedUrls;
+        var urlHash          = _.zipObject(ids, isDownloaded);
+        var undownloadedIds = _(urlHash).omitBy().keys().value();
+        return undownloadedIds;
       })
     })
   }
 
-  isDownloaded(url) {
-    return XKCDPage.where('url', url).count().then(function(count) {
+  isDownloaded(id) {
+    return this.model.where('id', id).count().then(function(count) {
       return count !== 0;
     });
   }
 
-  parseUrl(url) {
+  parseId(id) {
     var self = this;
-    return requestPromise(url).then(function(html) {
+    return requestPromise(this.getUrl(id)).then(function(html) {
       var $ = cheerio.load(html);
       var data = {};
-      data.id      = Number(url.replace(/\D+/g, ''));
-      data.url     = url;
+      data.id      = id;
+      data.url     = self.getUrl(id);
       data.title   = $("#ctitle").text();
       data.alttext = $("#comic img").attr('title');
       data.image   = $("#comic img").attr('src');
@@ -75,33 +81,33 @@ class WebsiteXkcdClass {
     })
   }
 
-  saveUrl(url) {
+  scrapeId(id) {
     var self = this;
-    return this.parseUrl(url).then((data) => {
-      return self.save(data)
+    return this.parseId(id).then((data) => {
+      return self.saveData(data)
     })
   }
 
-  save(data) {
-    return this.isDownloaded(data.url).then((isDownloaded) => {
+  saveData(data) {
+    return this.isDownloaded(data.id).then((isDownloaded) => {
       if( isDownloaded ) {
-        return new XKCDPage({ id: data.id }).save(data);
+        return new this.model({ id: data.id }).save(data);
       } else {
-        return new XKCDPage().save(data);
+        return new this.model().save(data);
       }
     });
   }
 
   scrapeAllUndownloaded() {
     var self = this;
-    return this.getUndownloadedUrls().then((urls) => {
-      return asyncQ.mapSeries(urls, (url) => {
-        return self.saveUrl(url).then((model) => {
-          console.info("SAVED: ", model.get('url'));
+    return this.getUndownloadedIds().then((ids) => {
+      return asyncQ.mapSeries(ids, (id) => {
+        return self.scrapeId(id).then((model) => {
+          console.info("SAVED: ", model.get('id'), model.get('url'));
           return model;
         })
         .catch((error) => {
-          console.error("ERROR: ", url, error);
+          console.error("ERROR: ", id, error);
         })
       })
     })
